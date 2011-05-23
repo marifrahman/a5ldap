@@ -29,7 +29,7 @@ class A5_Ldap
 	
 	function _ldap_connect()
 	{
-		$this->ldap = ldap_connect($this->CI->config->item('ldapurl'))
+		$this->ldap = @ldap_connect($this->CI->config->item('ldapurl'))
           or die("Couldn't connect to AD!");
   		// Set version number
 		ldap_set_option($this->ldap, LDAP_OPT_PROTOCOL_VERSION, 3)
@@ -37,7 +37,12 @@ class A5_Ldap
 		ldap_set_option($this->ldap, LDAP_OPT_REFERRALS,0)
 			or die ("Could no set the ldap referrals");
 	}
-	/*
+        function _ldap_disconnect()
+        {
+                @ldap_unbind($this->ldap);
+                $this->ldap = NULL;
+        }
+        /*
 	* To search if an email exists within the directory
 	*/
 	function isEmailinDirectory($email)
@@ -63,8 +68,51 @@ class A5_Ldap
 			$retval = false;
 		
 		
-		ldap_unbind($this->ldap);
+		$this->_ldap_disconnect();
 		return $retval;
+		
+	}
+	/*
+	* To search if an email exists within the directory
+	*/
+	function authenticate($email,$password)
+	{
+           	$email = $email."@".$this->CI->config->item('ldapdomain');
+                if(!isset($this->ldap))$this->_ldap_connect();
+                if(@ldap_bind($this->ldap,$email,$password))
+		{	  
+		    $ldap_dcs = explode('.',$this->CI->config->item('ldapdomain'));
+                    $dn = "";
+                    foreach($ldap_dcs as $ldap_dc)
+                            $dn = $dn."DC=".$ldap_dc.",";
+                    $dn = rtrim($dn, strrchr($dn, ","));//removes the last ','
+
+                    $filter = "(mail=".$email.")";
+                    $attributes = array("displayname",
+                                        "department",
+                                        "title");
+
+                    $result = @ldap_search($this->ldap,$dn, $filter,$attributes,0,0) or die ("ldap search failed");
+
+                    $entries = @ldap_get_entries($this->ldap, $result);
+                    if($entries["count"]>0)
+                    {
+			for ($i=0; $i<$entries["count"]; $i++)
+			{
+				
+				foreach($attributes as $attribute)
+					$retval[$attribute] = $entries[$i][$attribute][0];
+			}
+                    }
+                    else
+                        $retval = false;
+		
+                }
+                else
+                    $retval = false;
+		
+                $this->_ldap_disconnect();
+                return $retval;
 		
 	}
 	/*
@@ -73,6 +121,7 @@ class A5_Ldap
 	*/
 	function getuserInfobyEmail($email,$attributes)
 	{
+            
 		if(!isset($this->ldap))$this->_ldap_connect();
 		$bd = ldap_bind($this->ldap,$this->CI->config->item('ldapuser')."@".$this->CI->config->item('ldapdomain'),$this->CI->config->item('ldappwd'))
 			  or die("Couldn't bind to AD!");
@@ -105,7 +154,7 @@ class A5_Ldap
 			$retval = false;
 		
 		
-		ldap_unbind($this->ldap);
+		$this->_ldap_disconnect();
 		return $retval;
 	
 	}
